@@ -1,20 +1,23 @@
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, Image as RNImage } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useProjects } from '@/store/projects';
-import { Image, Video, Mic, Scissors } from 'lucide-react-native';
+import { Image, Video as VideoIcon, Mic, Scissors, Play, Pause } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
-import { Audio } from 'expo-av';
-import { useState, useRef } from 'react';
+import { Audio, Video } from 'expo-av';
+import { useState, useRef, useEffect } from 'react';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue,
-  withSpring 
+  withSpring,
+  withTiming 
 } from 'react-native-reanimated';
+import TimeLine from '@/app/components/TimeLine';
 
 const TRACK_HEIGHT = 80;
 const TIMELINE_SCALE = 100; // pixels per second
+const CANVAS_ASPECT_RATIO = 16 / 9;
 
 export default function EditProjectScreen() {
   const { id } = useLocalSearchParams();
@@ -22,8 +25,13 @@ export default function EditProjectScreen() {
   const project = projects.find((p) => p.id === id);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [selectedClip, setSelectedClip] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   const timelinePosition = useSharedValue(0);
   const scrollViewRef = useRef<ScrollView>(null);
+  const videoRef = useRef<Video>(null);
+  const lastFrameTime = useRef<number>(0);
+  const animationFrameId = useRef<number | null>(null);
 
   if (!project) {
     return (
@@ -46,7 +54,15 @@ export default function EditProjectScreen() {
     .onUpdate((e) => {
       const newPosition = Math.max(0, Math.min(e.absoluteX, timelineWidth));
       timelinePosition.value = withSpring(newPosition);
+      // Convert position to time
+      const newTime = (newPosition / TIMELINE_SCALE) * 1000;
+      setCurrentTime(newTime);
     });
+
+  // Find currently visible clips based on the playhead position (current time)
+  const visibleClips = project.clips.filter(
+    clip => currentTime >= clip.startTime && currentTime < (clip.startTime + clip.duration)
+  );
 
   const handleTrimStart = (clipId: string) => {
     setSelectedClip(clipId);
@@ -165,23 +181,169 @@ export default function EditProjectScreen() {
     }
   };
 
+  const renderTimeline = () => {
+    return (
+      <ScrollView
+        ref={scrollViewRef}
+        horizontal
+        style={styles.timeline}
+        contentContainerStyle={[
+          styles.timelineContent,
+          { width: Math.max(timelineWidth, 1000) }, // Ensure minimum width
+        ]}>
+        <GestureDetector gesture={panGesture}>
+          <View style={{ width: '100%', height: '100%' }}>
+            <Animated.View style={[styles.playhead, playheadStyle]} />
+            <TimeLine 
+              project={project}
+              selectedTime={currentTime}
+              onSelectTime={setCurrentTime}
+              timelineScale={TIMELINE_SCALE}
+              selectedClip={selectedClip}
+              onSelectClip={setSelectedClip}
+              onUpdateClipStartTime={handleUpdateClipStartTime}
+              onUpdateClipDuration={handleUpdateClipDuration}
+            />
+          </View>
+        </GestureDetector>
+      </ScrollView>
+    );
+  };
+
+  const renderCanvas = () => {
+    const currentClip = selectedClip 
+      ? project.clips.find(clip => clip.id === selectedClip)
+      : visibleClips.length > 0 
+        ? visibleClips[visibleClips.length - 1] // Show the top-most visible clip
+        : null;
+
+    return (
+      <View style={styles.canvas}>
+        {currentClip && ['image', 'video'].includes(currentClip.type) && (
+          currentClip.type === 'image' ? (
+            <RNImage
+              source={{ uri: currentClip.uri }}
+              style={styles.canvasMedia}
+              resizeMode="contain"
+            />
+          ) : (
+            <Video
+              ref={videoRef}
+              source={{ uri: currentClip.uri }}
+              style={styles.canvasMedia}
+              resizeMode="contain"
+              shouldPlay={isPlaying}
+            />
+          )
+        )}
+      </View>
+    );
+  };
+
+  // Handle Play/Pause
+  const togglePlayback = () => {
+    setIsPlaying(prevState => !prevState);
+  };
+
+  // Playback effect
+  useEffect(() => {
+    if (!project) return;
+    
+    // Find the total duration for the project
+    const maxDuration = project.clips.reduce(
+      (acc, clip) => Math.max(acc, clip.startTime + clip.duration), 0
+    );
+    
+    if (isPlaying) {
+      // Start the playback animation
+      lastFrameTime.current = Date.now();
+      
+      const animatePlayhead = () => {
+        const now = Date.now();
+        const deltaTime = now - lastFrameTime.current;
+        lastFrameTime.current = now;
+        
+        let newTime = currentTime + deltaTime;
+        
+        // Loop back to start if we reach the end
+        if (newTime >= maxDuration) {
+          newTime = 0;
+          // Also update the position immediately to avoid visual glitch
+          timelinePosition.value = 0;
+          // Scroll back to the beginning of the timeline
+          if (scrollViewRef.current) {
+            scrollViewRef.current.scrollTo({
+              x: 0,
+              animated: false,
+            });
+          }
+        }
+        
+        // Update current time and playhead position
+        setCurrentTime(newTime);
+        timelinePosition.value = withTiming((newTime / 1000) * TIMELINE_SCALE, {
+          duration: 100,
+        });
+        
+        // Ensure the scrollview follows the playhead
+        if (scrollViewRef.current) {
+          const playheadX = (newTime / 1000) * TIMELINE_SCALE;
+          scrollViewRef.current.scrollTo({
+            x: Math.max(0, playheadX - 200), // Keep playhead in view
+            animated: false,
+          });
+        }
+        
+        // Continue animation loop
+        animationFrameId.current = requestAnimationFrame(animatePlayhead);
+      };
+      
+      animationFrameId.current = requestAnimationFrame(animatePlayhead);
+    } else {
+      // Stop the animation when paused
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
+      }
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
+  }, [isPlaying, currentTime, project, timelinePosition, TIMELINE_SCALE]);
+
+  // Handle clip drag to update start time
+  const handleUpdateClipStartTime = (clipId: string, newStartTime: number) => {
+    const clip = project.clips.find(c => c.id === clipId);
+    if (clip) {
+      updateClip(project.id, clipId, {
+        ...clip,
+        startTime: newStartTime
+      });
+    }
+  };
+
+  // Handle clip duration update
+  const handleUpdateClipDuration = (clipId: string, newDuration: number) => {
+    const clip = project.clips.find(c => c.id === clipId);
+    if (clip) {
+      updateClip(project.id, clipId, {
+        ...clip,
+        duration: newDuration
+      });
+    }
+  };
+
   return (
     <View style={styles.container}>
+      <View style={styles.canvasContainer}>
+        {renderCanvas()}
+      </View>
       <View style={styles.timelineContainer}>
-        <ScrollView
-          ref={scrollViewRef}
-          horizontal
-          style={styles.timeline}
-          contentContainerStyle={[
-            styles.timelineContent,
-            { width: timelineWidth },
-          ]}>
-          <GestureDetector gesture={panGesture}>
-            <Animated.View style={[styles.playhead, playheadStyle]} />
-          </GestureDetector>
-          {renderTrack('video')}
-          {renderTrack('audio')}
-        </ScrollView>
+        {renderTimeline()}
       </View>
 
       <View style={styles.toolbar}>
@@ -190,10 +352,10 @@ export default function EditProjectScreen() {
           <Text style={styles.toolText}>Add Image</Text>
         </Pressable>
 
-        <Pressable style={styles.toolButton} onPress={pickVideo}>
-          <Video size={24} color="#fff" />
+        {/* <Pressable style={styles.toolButton} onPress={pickVideo}>
+          <VideoIcon size={24} color="#fff" />
           <Text style={styles.toolText}>Add Video</Text>
-        </Pressable>
+        </Pressable> */}
 
         <Pressable
           style={[styles.toolButton, recording && styles.toolButtonRecording]}
@@ -204,14 +366,25 @@ export default function EditProjectScreen() {
           </Text>
         </Pressable>
 
-        {selectedClip && (
+        {/* {selectedClip && (
           <Pressable
             style={styles.toolButton}
             onPress={() => setSelectedClip(null)}>
             <Scissors size={24} color="#fff" />
             <Text style={styles.toolText}>Trim Clip</Text>
           </Pressable>
-        )}
+        )} */}
+
+        <Pressable style={styles.toolButton} onPress={togglePlayback}>
+          {isPlaying ? (
+            <Pause size={24} color="#fff" />
+          ) : (
+            <Play size={24} color="#fff" />
+          )}
+          <Text style={styles.toolText}>
+            {isPlaying ? 'Pause' : 'Play'}
+          </Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -229,6 +402,8 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   timelineContainer: {
+    height: 200,
+    width: '100%',
     flex: 1,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
@@ -324,5 +499,35 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 4,
     fontSize: 12,
+  },
+  timelineMarker: {
+    position: 'absolute',
+    height: '100%',
+    width: 1,
+    backgroundColor: '#fff',
+  },
+  timelineMarkerText: {
+    position: 'absolute',
+    top: 10,
+    left: -10,
+    color: '#fff',
+    fontSize: 12,
+  },
+  canvasContainer: {
+    width: '100%',
+    aspectRatio: CANVAS_ASPECT_RATIO,
+    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  canvas: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  canvasMedia: {
+    width: '100%',
+    height: '100%',
   },
 });
