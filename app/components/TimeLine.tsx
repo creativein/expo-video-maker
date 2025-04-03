@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Project } from '@/store/projects';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { GestureDetector, Gesture, PanGestureHandlerEventPayload, GestureUpdateEvent } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue,runOnJS ,withSpring} from 'react-native-reanimated';
 
 interface TimeLineProps {
   project: Project;
@@ -31,82 +31,117 @@ const TimelineClip = ({
   onUpdateStartTime?: (clipId: string, newStartTime: number) => void;
   onUpdateDuration?: (clipId: string, newDuration: number) => void;
 }) => {
-  // Each clip instance gets its own hook
   const position = useSharedValue((clip.startTime / 1000) * timelineScale);
   const width = useSharedValue((clip.duration / 1000) * timelineScale);
   
-  // Update position when startTime changes from outside
+  // Constants for duration constraints
+  const MIN_DURATION = 0; // Minimum duration in seconds
+  const MAX_DURATION = 112; // Maximum duration in seconds
+  
   React.useEffect(() => {
     position.value = (clip.startTime / 1000) * timelineScale;
   }, [clip.startTime, timelineScale]);
   
-  // Update width when duration changes from outside
   React.useEffect(() => {
     width.value = (clip.duration / 1000) * timelineScale;
   }, [clip.duration, timelineScale]);
   
-  // Animation style for this clip
   const animatedStyle = useAnimatedStyle(() => ({
     left: position.value,
     width: width.value,
   }));
-  
-  // Drag gesture for moving the entire clip
   const panGesture = Gesture.Pan()
-    .onUpdate((e) => {
-      // Calculate new position, ensuring it doesn't go below 0
-      position.value = Math.max(0, position.value + e.changeX);
-    })
-    .onEnd(() => {
-      // Convert position back to time (ms)
-      const newStartTime = Math.round((position.value / timelineScale) * 1000);
-      
-      // Call the update function to save the new start time
-      if (onUpdateStartTime) {
-        onUpdateStartTime(clip.id, newStartTime);
-      }
-    });
+  .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
+    position.value = withSpring(
+      Math.max(0, position.value + e.translationX),
+      { damping: 15, stiffness: 150 }
+    );
+  })
+  .onEnd(() => {
+    const newStartTime = Math.round((position.value / timelineScale) * 1000);
+    if (onUpdateStartTime) {
+      runOnJS(onUpdateStartTime)(clip.id, newStartTime);
+    }
+  });
+  // const panGesture = Gesture.Pan()
+  //   .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
+  //     position.value = Math.max(0, position.value + e.translationX);
+  //   })
+  //   .onEnd(() => {
+  //     const newStartTime = Math.round((position.value / timelineScale) * 1000);
+  //     if (onUpdateStartTime) {
+  //       onUpdateStartTime(clip.id, newStartTime);
+  //     }
+  //   });
+
+    const leftHandleGesture = Gesture.Pan()
+    .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
+      const newPosition = Math.max(0, position.value + e.translationX);
+      const newWidth = Math.min(
+        MAX_DURATION * timelineScale,
+        Math.max(MIN_DURATION * timelineScale, width.value - e.translationX)
+      );
   
-  // Drag gesture for the left handle (changes start time and duration)
-  const leftHandleGesture = Gesture.Pan()
-    .onUpdate((e) => {
-      // Calculate new position and width
-      const newPosition = Math.max(0, position.value + e.changeX);
-      const newWidth = Math.max(500 / timelineScale, width.value - e.changeX); // Minimum 500ms
-      
-      // Only update if we're not making the clip too small
-      if (newWidth >= 500 / timelineScale) {
-        position.value = newPosition;
-        width.value = newWidth;
-      }
+      position.value = withSpring(newPosition, { damping: 15, stiffness: 150 });
+      width.value = withSpring(newWidth, { damping: 15, stiffness: 150 });
     })
     .onEnd(() => {
-      // Convert to time values
       const newStartTime = Math.round((position.value / timelineScale) * 1000);
       const newDuration = Math.round((width.value / timelineScale) * 1000);
-      
-      // Update both start time and duration
+  
       if (onUpdateStartTime && onUpdateDuration) {
-        onUpdateStartTime(clip.id, newStartTime);
-        onUpdateDuration(clip.id, newDuration);
+        runOnJS(onUpdateStartTime)(clip.id, newStartTime);
+        runOnJS(onUpdateDuration)(clip.id, newDuration);
       }
     });
-  
-  // Drag gesture for the right handle (changes only duration)
-  const rightHandleGesture = Gesture.Pan()
+  // const leftHandleGesture = Gesture.Pan()
+  //   .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
+  //     const newPosition = Math.max(0, position.value + e.translationX);
+  //     const newWidth = Math.min(
+  //       MAX_DURATION * timelineScale,
+  //       Math.max(MIN_DURATION * timelineScale, width.value - e.translationX)
+  //     );
+      
+  //     position.value = newPosition;
+  //     width.value = newWidth;
+  //   })
+  //   .onEnd(() => {
+  //     const newStartTime = Math.round((position.value / timelineScale) * 1000);
+  //     const newDuration = Math.round((width.value / timelineScale) * 1000);
+      
+  //     if (onUpdateStartTime && onUpdateDuration) {
+  //       onUpdateStartTime(clip.id, newStartTime);
+  //       onUpdateDuration(clip.id, newDuration);
+  //     }
+  //   });
+    const rightHandleGesture = Gesture.Pan()
     .onUpdate((e) => {
-      // Calculate new width, ensuring minimum width
-      width.value = Math.max(500 / timelineScale, width.value + e.changeX); // Minimum 500ms
+      width.value = withSpring(
+        Math.min(
+          MAX_DURATION * timelineScale,
+          Math.max(MIN_DURATION * timelineScale, width.value + e.translationX)
+        ),
+        { damping: 15, stiffness: 150 }
+      );
     })
     .onEnd(() => {
-      // Convert to time value
-      const newDuration = Math.round((width.value / timelineScale) * 1000);
-      
-      // Update the duration
       if (onUpdateDuration) {
-        onUpdateDuration(clip.id, newDuration);
+      runOnJS(onUpdateDuration)?.(clip.id, Math.round((width.value / timelineScale) * 1000));
       }
     });
+  // const rightHandleGesture = Gesture.Pan()
+  //   .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
+  //     width.value = Math.min(
+  //       MAX_DURATION * timelineScale,
+  //       Math.max(MIN_DURATION * timelineScale, width.value + e.translationX)
+  //     );
+  //   })
+  //   .onEnd(() => {
+  //     const newDuration = Math.round((width.value / timelineScale) * 1000);
+  //     if (onUpdateDuration) {
+  //       onUpdateDuration(clip.id, newDuration);
+  //     }
+  //   });
   
   return (
     <GestureDetector gesture={panGesture}>
@@ -152,12 +187,16 @@ const TimeLine: React.FC<TimeLineProps> = ({
   onUpdateClipStartTime,
   onUpdateClipDuration,
 }) => {
-  // Group clips by type (video/image or audio)
-  const videoClips = project.clips.filter(clip => 
+  // Sort clips by start time to ensure proper sequencing
+  const sortedClips = useMemo(() => {
+    return [...project.clips].sort((a, b) => a.startTime - b.startTime);
+  }, [project.clips]);
+
+  const videoClips = sortedClips.filter(clip => 
     ['image', 'video'].includes(clip.type)
   );
   
-  const audioClips = project.clips.filter(clip => 
+  const audioClips = sortedClips.filter(clip => 
     clip.type === 'audio'
   );
 
