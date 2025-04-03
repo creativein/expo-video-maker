@@ -1,8 +1,18 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Project } from '@/store/projects';
-import { GestureDetector, Gesture, PanGestureHandlerEventPayload, GestureUpdateEvent } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue,runOnJS ,withSpring} from 'react-native-reanimated';
+import React, { useMemo } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Gesture,
+  GestureDetector,
+  GestureUpdateEvent,
+  PanGestureHandlerEventPayload,
+} from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 
 interface TimeLineProps {
   project: Project;
@@ -33,59 +43,59 @@ const TimelineClip = ({
 }) => {
   const position = useSharedValue((clip.startTime / 1000) * timelineScale);
   const width = useSharedValue((clip.duration / 1000) * timelineScale);
-  
+
   // Constants for duration constraints
   const MIN_DURATION = 0; // Minimum duration in seconds
   const MAX_DURATION = 112; // Maximum duration in seconds
-  
+
   React.useEffect(() => {
     position.value = (clip.startTime / 1000) * timelineScale;
   }, [clip.startTime, timelineScale]);
-  
+
   React.useEffect(() => {
     width.value = (clip.duration / 1000) * timelineScale;
   }, [clip.duration, timelineScale]);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     left: position.value,
     width: width.value,
   }));
   const panGesture = Gesture.Pan()
-  .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
-    position.value = withSpring(
-      Math.max(0, position.value + e.translationX),
-      { damping: 15, stiffness: 150 }
-    );
-  })
-  .onEnd(() => {
-    const newStartTime = Math.round((position.value / timelineScale) * 1000);
-    if (onUpdateStartTime) {
-      runOnJS(onUpdateStartTime)(clip.id, newStartTime);
-    }
-  });
-  
-    const leftHandleGesture = Gesture.Pan()
+    .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
+      position.value = withSpring(
+        Math.max(0, position.value + e.translationX),
+        { damping: 15, stiffness: 150 }
+      );
+    })
+    .onEnd(() => {
+      const newStartTime = Math.round((position.value / timelineScale) * 1000);
+      if (onUpdateStartTime) {
+        runOnJS(onUpdateStartTime)(clip.id, newStartTime);
+      }
+    });
+
+  const leftHandleGesture = Gesture.Pan()
     .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
       const newPosition = Math.max(0, position.value + e.translationX);
       const newWidth = Math.min(
         MAX_DURATION * timelineScale,
         Math.max(MIN_DURATION * timelineScale, width.value - e.translationX)
       );
-  
+
       position.value = withSpring(newPosition, { damping: 15, stiffness: 150 });
       width.value = withSpring(newWidth, { damping: 15, stiffness: 150 });
     })
     .onEnd(() => {
       const newStartTime = Math.round((position.value / timelineScale) * 1000);
       const newDuration = Math.round((width.value / timelineScale) * 1000);
-  
+
       if (onUpdateStartTime && onUpdateDuration) {
         runOnJS(onUpdateStartTime)(clip.id, newStartTime);
         runOnJS(onUpdateDuration)(clip.id, newDuration);
       }
     });
-  
-    const rightHandleGesture = Gesture.Pan()
+
+  const rightHandleGesture = Gesture.Pan()
     .onUpdate((e) => {
       width.value = withSpring(
         Math.min(
@@ -97,32 +107,30 @@ const TimelineClip = ({
     })
     .onEnd(() => {
       if (onUpdateDuration) {
-      runOnJS(onUpdateDuration)?.(clip.id, Math.round((width.value / timelineScale) * 1000));
+        runOnJS(onUpdateDuration)?.(
+          clip.id,
+          Math.round((width.value / timelineScale) * 1000)
+        );
       }
     });
-    
+
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View
-        style={[
-          styles.clip,
-          isSelected && styles.selectedClip,
-          animatedStyle,
-        ]}
+        style={[styles.clip, isSelected && styles.selectedClip, animatedStyle]}
       >
-        <Pressable 
-          style={styles.clipContent}
-          onPress={onSelect}
-        >
-          <Text style={styles.clipText}>{clip.type}</Text>
+        <Pressable style={styles.clipContent} onPress={onSelect}>
+          <View style={styles.clipImageContainer}>
+            <Image style={styles.clipImage} source={{ uri: clip.uri }} />
+          </View>
         </Pressable>
-        
+
         {isSelected && (
           <>
             <GestureDetector gesture={leftHandleGesture}>
               <View style={[styles.resizeHandle, styles.leftHandle]} />
             </GestureDetector>
-            
+
             <GestureDetector gesture={rightHandleGesture}>
               <View style={[styles.resizeHandle, styles.rightHandle]} />
             </GestureDetector>
@@ -150,23 +158,21 @@ const TimeLine: React.FC<TimeLineProps> = ({
     return [...project.clips].sort((a, b) => a.startTime - b.startTime);
   }, [project.clips]);
 
-  const videoClips = sortedClips.filter(clip => 
+  const videoClips = sortedClips.filter((clip) =>
     ['image', 'video'].includes(clip.type)
   );
-  
-  const audioClips = sortedClips.filter(clip => 
-    clip.type === 'audio'
-  );
+
+  const audioClips = sortedClips.filter((clip) => clip.type === 'audio');
 
   // Calculate total duration for timeline width
   const totalDuration = project.clips.reduce(
-    (acc, clip) => Math.max(acc, clip.startTime + clip.duration), 
+    (acc, clip) => Math.max(acc, clip.startTime + clip.duration),
     0
   );
-  
+
   // Minimum width to ensure we have space to work with
   const timelineWidth = Math.max(
-    totalDuration * timelineScale / 1000,
+    (totalDuration * timelineScale) / 1000,
     1000 // Minimum width of 1000px
   );
 
@@ -174,34 +180,35 @@ const TimeLine: React.FC<TimeLineProps> = ({
   const timeMarkers = [];
   const markerInterval = 1000; // 1 second
   const numMarkers = Math.ceil(totalDuration / markerInterval) + 1;
-  
+
   for (let i = 0; i < numMarkers; i++) {
     const time = i * markerInterval;
     timeMarkers.push(
-      <View 
-        key={`marker-${i}`} 
+      <View
+        key={`marker-${i}`}
         style={[
           styles.timeMarker,
           {
             left: (time / 1000) * timelineScale,
-          }
+          },
         ]}
       >
-        <Text style={styles.timeMarkerText}>
-          {formatTime(time)}
-        </Text>
+        <Text style={styles.timeMarkerText}>{formatTime(time)}</Text>
       </View>
     );
   }
 
   // Render a track with clips
-  const renderTrack = (trackClips: typeof project.clips, trackTitle: string) => (
+  const renderTrack = (
+    trackClips: typeof project.clips,
+    trackTitle: string
+  ) => (
     <View style={styles.track}>
       {/* <View style={styles.trackLabel}>
         <Text style={styles.trackLabelText}>{trackTitle}</Text>
       </View> */}
       <View style={styles.trackContent}>
-        {trackClips.map(clip => (
+        {trackClips.map((clip) => (
           <TimelineClip
             key={clip.id}
             clip={clip}
@@ -218,25 +225,23 @@ const TimeLine: React.FC<TimeLineProps> = ({
 
   // Render the current time position indicator (playhead)
   const renderPlayhead = () => (
-    <View 
+    <View
       style={[
         styles.playhead,
         {
           left: (selectedTime / 1000) * timelineScale,
-        }
-      ]} 
+        },
+      ]}
     />
   );
 
   return (
     <View style={styles.container}>
-      <View style={styles.timelineHeader}>
-        {timeMarkers}
-      </View>
-      
+      <View style={styles.timelineHeader}>{timeMarkers}</View>
+
       {renderTrack(videoClips, 'Video Track')}
       {renderTrack(audioClips, 'Audio Track')}
-      
+
       {renderPlayhead()}
     </View>
   );
@@ -315,6 +320,16 @@ const styles = StyleSheet.create({
   clipText: {
     color: '#fff',
     fontSize: 10,
+  },
+  clipImageContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  clipImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'repeat',
   },
   playhead: {
     position: 'absolute',

@@ -1,19 +1,30 @@
-import { View, Text, StyleSheet, Pressable, ScrollView, Image as RNImage } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import TimeLine from '@/app/components/TimeLine';
 import { useProjects } from '@/store/projects';
-import { Image, Video as VideoIcon, Mic, Scissors, Play, Pause } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
-import * as MediaLibrary from 'expo-media-library';
 import { Audio, Video } from 'expo-av';
-import { useState, useRef, useEffect } from 'react';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { 
-  useAnimatedStyle, 
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams } from 'expo-router';
+import {
+  Image,
+  Mic,
+  Pause,
+  Play
+} from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Pressable,
+  Image as RNImage,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withTiming 
+  withTiming,
 } from 'react-native-reanimated';
-import TimeLine from '@/app/components/TimeLine';
 
 const TRACK_HEIGHT = 80;
 const TIMELINE_SCALE = 100; // pixels per second
@@ -41,27 +52,30 @@ export default function EditProjectScreen() {
     );
   }
 
-  const totalDuration = project.clips.reduce((acc, clip) => 
-    Math.max(acc, clip.startTime + clip.duration), 0);
+  const totalDuration = project.clips.reduce(
+    (acc, clip) => Math.max(acc, clip.startTime + clip.duration),
+    0
+  );
 
-  const timelineWidth = totalDuration * TIMELINE_SCALE / 1000;
+  const timelineWidth = (totalDuration * TIMELINE_SCALE) / 1000;
 
   const playheadStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: timelinePosition.value }],
   }));
 
-  const panGesture = Gesture.Pan()
-    .onUpdate((e) => {
-      const newPosition = Math.max(0, Math.min(e.absoluteX, timelineWidth));
-      timelinePosition.value = withSpring(newPosition);
-      // Convert position to time
-      const newTime = (newPosition / TIMELINE_SCALE) * 1000;
-      setCurrentTime(newTime);
-    });
+  const panGesture = Gesture.Pan().onUpdate((e) => {
+    const newPosition = Math.max(0, Math.min(e.absoluteX, timelineWidth));
+    timelinePosition.value = withSpring(newPosition);
+    // Convert position to time
+    const newTime = (newPosition / TIMELINE_SCALE) * 1000;
+    setCurrentTime(newTime);
+  });
 
   // Find currently visible clips based on the playhead position (current time)
   const visibleClips = project.clips.filter(
-    clip => currentTime >= clip.startTime && currentTime < (clip.startTime + clip.duration)
+    (clip) =>
+      currentTime >= clip.startTime &&
+      currentTime < clip.startTime + clip.duration
   );
 
   const handleTrimStart = (clipId: string) => {
@@ -69,8 +83,10 @@ export default function EditProjectScreen() {
   };
 
   const renderTrack = (type: 'video' | 'audio') => {
-    const clips = project.clips.filter(clip => 
-      type === 'video' ? ['image', 'video'].includes(clip.type) : clip.type === 'audio'
+    const clips = project.clips.filter((clip) =>
+      type === 'video'
+        ? ['image', 'video'].includes(clip.type)
+        : clip.type === 'audio'
     );
 
     return (
@@ -92,7 +108,8 @@ export default function EditProjectScreen() {
                 },
                 selectedClip === clip.id && styles.selectedClip,
               ]}
-              onPress={() => handleTrimStart(clip.id)}>
+              onPress={() => handleTrimStart(clip.id)}
+            >
               <View style={styles.clipContent}>
                 <Text style={styles.clipType}>{clip.type}</Text>
                 {selectedClip === clip.id && (
@@ -190,11 +207,12 @@ export default function EditProjectScreen() {
         contentContainerStyle={[
           styles.timelineContent,
           { width: Math.max(timelineWidth, 1000) }, // Ensure minimum width
-        ]}>
+        ]}
+      >
         <GestureDetector gesture={panGesture}>
           <View style={{ width: '100%', height: '100%' }}>
             <Animated.View style={[styles.playhead, playheadStyle]} />
-            <TimeLine 
+            <TimeLine
               project={project}
               selectedTime={currentTime}
               onSelectTime={setCurrentTime}
@@ -211,16 +229,21 @@ export default function EditProjectScreen() {
   };
 
   const renderCanvas = () => {
-    const currentClip = selectedClip 
-      ? project.clips.find(clip => clip.id === selectedClip)
-      : visibleClips.length > 0 
+    const currentClip = isPlaying
+      ? visibleClips.length > 0
         ? visibleClips[visibleClips.length - 1] // Show the top-most visible clip
-        : null;
+        : null
+      : selectedClip
+      ? project.clips.find((clip) => clip.id === selectedClip)
+      : visibleClips.length > 0
+      ? visibleClips[visibleClips.length - 1] // Show the top-most visible clip
+      : null;
 
     return (
       <View style={styles.canvas}>
-        {currentClip && ['image', 'video'].includes(currentClip.type) && (
-          currentClip.type === 'image' ? (
+        {currentClip &&
+          ['image', 'video'].includes(currentClip.type) &&
+          (currentClip.type === 'image' ? (
             <RNImage
               source={{ uri: currentClip.uri }}
               style={styles.canvasMedia}
@@ -234,37 +257,42 @@ export default function EditProjectScreen() {
               resizeMode="contain"
               shouldPlay={isPlaying}
             />
-          )
-        )}
+          ))}
       </View>
     );
   };
 
   // Handle Play/Pause
   const togglePlayback = () => {
-    setIsPlaying(prevState => !prevState);
+    setIsPlaying((prevState) => !prevState);
+
+    if (isPlaying) {
+      visibleClips.length > 0 &&
+        setSelectedClip(visibleClips[visibleClips.length - 1].id);
+    }
   };
 
   // Playback effect
   useEffect(() => {
     if (!project) return;
-    
+
     // Find the total duration for the project
     const maxDuration = project.clips.reduce(
-      (acc, clip) => Math.max(acc, clip.startTime + clip.duration), 0
+      (acc, clip) => Math.max(acc, clip.startTime + clip.duration),
+      0
     );
-    
+
     if (isPlaying) {
       // Start the playback animation
       lastFrameTime.current = Date.now();
-      
+
       const animatePlayhead = () => {
         const now = Date.now();
         const deltaTime = now - lastFrameTime.current;
         lastFrameTime.current = now;
-        
+
         let newTime = currentTime + deltaTime;
-        
+
         // Loop back to start if we reach the end
         if (newTime >= maxDuration) {
           newTime = 0;
@@ -278,13 +306,13 @@ export default function EditProjectScreen() {
             });
           }
         }
-        
+
         // Update current time and playhead position
         setCurrentTime(newTime);
         timelinePosition.value = withTiming((newTime / 1000) * TIMELINE_SCALE, {
           duration: 100,
         });
-        
+
         // Ensure the scrollview follows the playhead
         if (scrollViewRef.current) {
           const playheadX = (newTime / 1000) * TIMELINE_SCALE;
@@ -293,11 +321,11 @@ export default function EditProjectScreen() {
             animated: false,
           });
         }
-        
+
         // Continue animation loop
         animationFrameId.current = requestAnimationFrame(animatePlayhead);
       };
-      
+
       animationFrameId.current = requestAnimationFrame(animatePlayhead);
     } else {
       // Stop the animation when paused
@@ -306,7 +334,7 @@ export default function EditProjectScreen() {
         animationFrameId.current = null;
       }
     }
-    
+
     // Cleanup on unmount
     return () => {
       if (animationFrameId.current) {
@@ -317,34 +345,30 @@ export default function EditProjectScreen() {
 
   // Handle clip drag to update start time
   const handleUpdateClipStartTime = (clipId: string, newStartTime: number) => {
-    const clip = project.clips.find(c => c.id === clipId);
+    const clip = project.clips.find((c) => c.id === clipId);
     if (clip) {
       updateClip(project.id, clipId, {
         ...clip,
-        startTime: newStartTime
+        startTime: newStartTime,
       });
     }
   };
 
   // Handle clip duration update
   const handleUpdateClipDuration = (clipId: string, newDuration: number) => {
-    const clip = project.clips.find(c => c.id === clipId);
+    const clip = project.clips.find((c) => c.id === clipId);
     if (clip) {
       updateClip(project.id, clipId, {
         ...clip,
-        duration: newDuration
+        duration: newDuration,
       });
     }
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.canvasContainer}>
-        {renderCanvas()}
-      </View>
-      <View style={styles.timelineContainer}>
-        {renderTimeline()}
-      </View>
+      <View style={styles.canvasContainer}>{renderCanvas()}</View>
+      <View style={styles.timelineContainer}>{renderTimeline()}</View>
 
       <View style={styles.toolbar}>
         <Pressable style={styles.toolButton} onPress={pickImage}>
@@ -359,7 +383,8 @@ export default function EditProjectScreen() {
 
         <Pressable
           style={[styles.toolButton, recording && styles.toolButtonRecording]}
-          onPress={recording ? stopRecording : startRecording}>
+          onPress={recording ? stopRecording : startRecording}
+        >
           <Mic size={24} color="#fff" />
           <Text style={styles.toolText}>
             {recording ? 'Stop Recording' : 'Record Audio'}
@@ -381,9 +406,7 @@ export default function EditProjectScreen() {
           ) : (
             <Play size={24} color="#fff" />
           )}
-          <Text style={styles.toolText}>
-            {isPlaying ? 'Pause' : 'Play'}
-          </Text>
+          <Text style={styles.toolText}>{isPlaying ? 'Pause' : 'Play'}</Text>
         </Pressable>
       </View>
     </View>
