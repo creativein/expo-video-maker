@@ -63,17 +63,7 @@ const TimelineClip = ({
       runOnJS(onUpdateStartTime)(clip.id, newStartTime);
     }
   });
-  // const panGesture = Gesture.Pan()
-  //   .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
-  //     position.value = Math.max(0, position.value + e.translationX);
-  //   })
-  //   .onEnd(() => {
-  //     const newStartTime = Math.round((position.value / timelineScale) * 1000);
-  //     if (onUpdateStartTime) {
-  //       onUpdateStartTime(clip.id, newStartTime);
-  //     }
-  //   });
-
+  
     const leftHandleGesture = Gesture.Pan()
     .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
       const newPosition = Math.max(0, position.value + e.translationX);
@@ -94,26 +84,7 @@ const TimelineClip = ({
         runOnJS(onUpdateDuration)(clip.id, newDuration);
       }
     });
-  // const leftHandleGesture = Gesture.Pan()
-  //   .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
-  //     const newPosition = Math.max(0, position.value + e.translationX);
-  //     const newWidth = Math.min(
-  //       MAX_DURATION * timelineScale,
-  //       Math.max(MIN_DURATION * timelineScale, width.value - e.translationX)
-  //     );
-      
-  //     position.value = newPosition;
-  //     width.value = newWidth;
-  //   })
-  //   .onEnd(() => {
-  //     const newStartTime = Math.round((position.value / timelineScale) * 1000);
-  //     const newDuration = Math.round((width.value / timelineScale) * 1000);
-      
-  //     if (onUpdateStartTime && onUpdateDuration) {
-  //       onUpdateStartTime(clip.id, newStartTime);
-  //       onUpdateDuration(clip.id, newDuration);
-  //     }
-  //   });
+  
     const rightHandleGesture = Gesture.Pan()
     .onUpdate((e) => {
       width.value = withSpring(
@@ -129,20 +100,7 @@ const TimelineClip = ({
       runOnJS(onUpdateDuration)?.(clip.id, Math.round((width.value / timelineScale) * 1000));
       }
     });
-  // const rightHandleGesture = Gesture.Pan()
-  //   .onUpdate((e: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
-  //     width.value = Math.min(
-  //       MAX_DURATION * timelineScale,
-  //       Math.max(MIN_DURATION * timelineScale, width.value + e.translationX)
-  //     );
-  //   })
-  //   .onEnd(() => {
-  //     const newDuration = Math.round((width.value / timelineScale) * 1000);
-  //     if (onUpdateDuration) {
-  //       onUpdateDuration(clip.id, newDuration);
-  //     }
-  //   });
-  
+    
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View
