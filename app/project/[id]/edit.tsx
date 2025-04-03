@@ -14,6 +14,7 @@ import Animated, {
   withTiming 
 } from 'react-native-reanimated';
 import TimeLine from '@/app/components/TimeLine';
+import VideoPlayComponent from './VideoPlayComponent';
 
 const TRACK_HEIGHT = 80;
 const TIMELINE_SCALE = 100; // pixels per second
@@ -219,7 +220,8 @@ export default function EditProjectScreen() {
 
     return (
       <View style={styles.canvas}>
-        {currentClip && ['image', 'video'].includes(currentClip.type) && (
+        {isPlaying && <VideoPlayComponent currentTime={currentTime} />}
+        {currentClip && !isPlaying && ['image', 'video'].includes(currentClip.type) && (
           currentClip.type === 'image' ? (
             <RNImage
               source={{ uri: currentClip.uri }}
