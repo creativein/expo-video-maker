@@ -1,6 +1,15 @@
 import { Project } from '@/store/projects';
-import React, { useMemo } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {
   Gesture,
   GestureDetector,
@@ -20,7 +29,10 @@ interface TimeLineProps {
   onSelectTime?: (time: number) => void;
   timelineScale: number;
   selectedClip: string | null;
+  selectedLayer: number;
+  onDeleteLayer: (layerId: number) => void;
   onSelectClip?: (clipId: string) => void;
+  onSelectLayer: (layerId: number) => void;
   onUpdateClipStartTime?: (clipId: string, newStartTime: number) => void;
   onUpdateClipDuration?: (clipId: string, newDuration: number) => void;
 }
@@ -149,10 +161,20 @@ const TimeLine: React.FC<TimeLineProps> = ({
   onSelectTime,
   timelineScale,
   selectedClip,
+  selectedLayer,
+  onDeleteLayer,
   onSelectClip,
+  onSelectLayer,
   onUpdateClipStartTime,
   onUpdateClipDuration,
 }) => {
+  const [deleteLayerId, setDeleteLayerId] = useState<number | null>(null);
+  const [deleteLayerMenuVisible, setDeleteLayerMenuVisible] = useState(false);
+  const [deleteLayerMenuPosition, setDeleteLayerMenuPosition] = useState({
+    x: 0,
+    y: 0,
+  });
+
   // Sort clips by start time to ensure proper sequencing
   const sortedClips = useMemo(() => {
     return [...project.clips].sort((a, b) => a.startTime - b.startTime);
@@ -201,27 +223,48 @@ const TimeLine: React.FC<TimeLineProps> = ({
   // Render a track with clips
   const renderTrack = (
     trackClips: typeof project.clips,
-    trackTitle: string
-  ) => (
-    <View style={styles.track}>
-      {/* <View style={styles.trackLabel}>
-        <Text style={styles.trackLabelText}>{trackTitle}</Text>
-      </View> */}
-      <View style={styles.trackContent}>
-        {trackClips.map((clip) => (
-          <TimelineClip
-            key={clip.id}
-            clip={clip}
-            timelineScale={timelineScale}
-            isSelected={selectedClip === clip.id}
-            onSelect={() => onSelectClip?.(clip.id)}
-            onUpdateStartTime={onUpdateClipStartTime}
-            onUpdateDuration={onUpdateClipDuration}
-          />
-        ))}
-      </View>
-    </View>
-  );
+    trackTitle: string,
+    layerId: number
+  ) => {
+    return (
+      <Pressable
+        style={
+          selectedLayer === layerId
+            ? { ...styles.track, ...styles.selectedTrack }
+            : styles.track
+        }
+        onPress={onSelectLayer.bind(this, layerId)}
+        onLongPress={(e) => {
+          if (project.layers.length >= 2) {
+            setDeleteLayerId(layerId);
+            setDeleteLayerMenuPosition({
+              x: e.nativeEvent.pageX,
+              y: e.nativeEvent.pageY,
+            });
+            setDeleteLayerMenuVisible(true);
+          }
+        }}
+        key={layerId}
+      >
+        <View style={styles.track}>
+          <View style={styles.trackContent}>
+            {trackClips.length > 0 &&
+              trackClips.map((clip) => (
+                <TimelineClip
+                  key={clip.id}
+                  clip={clip}
+                  timelineScale={timelineScale}
+                  isSelected={selectedClip === clip.id}
+                  onSelect={() => onSelectClip?.(clip.id)}
+                  onUpdateStartTime={onUpdateClipStartTime}
+                  onUpdateDuration={onUpdateClipDuration}
+                />
+              ))}
+          </View>
+        </View>
+      </Pressable>
+    );
+  };
 
   // Render the current time position indicator (playhead)
   const renderPlayhead = () => (
@@ -230,20 +273,72 @@ const TimeLine: React.FC<TimeLineProps> = ({
         styles.playhead,
         {
           left: (selectedTime / 1000) * timelineScale,
+          height:
+            TRACK_HEIGHT * project.layers.length +
+            (12 * project.layers.length - 1),
         },
       ]}
     />
   );
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <View style={styles.timelineHeader}>{timeMarkers}</View>
 
-      {renderTrack(videoClips, 'Video Track')}
-      {renderTrack(audioClips, 'Audio Track')}
+      {project.layers.map((layer) =>
+        renderTrack(
+          project.clips.filter((clip) => clip.layerId === layer.id),
+          'Video Track',
+          layer.id
+        )
+      )}
+
+      {/* {renderTrack(audioClips, 'Audio Track')} */}
 
       {renderPlayhead()}
-    </View>
+
+      {deleteLayerId && deleteLayerMenuVisible && (
+        <DeleteLayerMenu
+          position={deleteLayerMenuPosition}
+          onClose={() => setDeleteLayerMenuVisible(false)}
+          onDeleteLayer={onDeleteLayer.bind(this, deleteLayerId)}
+        />
+      )}
+    </ScrollView>
+  );
+};
+
+const DeleteLayerMenu = ({
+  position,
+  onClose,
+  onDeleteLayer,
+}: {
+  position: { x: number; y: number };
+  onClose: () => void;
+  onDeleteLayer: () => void;
+}) => {
+  return (
+    <Modal visible={true} transparent={true} onRequestClose={onClose}>
+      <TouchableOpacity
+        style={styles.modalBackground}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <View
+          style={[styles.menuContainer, { top: position.y, left: position.x }]}
+        >
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              onClose();
+              onDeleteLayer();
+            }}
+          >
+            <Text>Delete Layer</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
   );
 };
 
@@ -285,6 +380,11 @@ const styles = StyleSheet.create({
     height: TRACK_HEIGHT,
     flexDirection: 'row',
     marginBottom: 12,
+    backgroundColor: '#696969',
+  },
+  selectedTrack: {
+    borderWidth: 1,
+    borderColor: 'red',
   },
   trackLabel: {
     width: 100,
@@ -304,7 +404,7 @@ const styles = StyleSheet.create({
   },
   clip: {
     position: 'absolute',
-    height: '100%',
+    height: '95%',
     backgroundColor: '#3a3a3a',
     borderRadius: 4,
     padding: 8,
@@ -334,7 +434,6 @@ const styles = StyleSheet.create({
   playhead: {
     position: 'absolute',
     top: 30, // Start below the timeline header
-    height: TRACK_HEIGHT * 3, // Cover all tracks
     width: 2,
     backgroundColor: '#ff3b30',
     zIndex: 1000,
@@ -352,6 +451,26 @@ const styles = StyleSheet.create({
   },
   rightHandle: {
     right: -5,
+  },
+  modalBackground: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuContainer: {
+    position: 'absolute',
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  menuItem: {
+    padding: 10,
   },
 });
 

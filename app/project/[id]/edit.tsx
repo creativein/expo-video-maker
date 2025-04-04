@@ -1,16 +1,12 @@
 import TimeLine from '@/app/components/TimeLine';
 import { useProjects } from '@/store/projects';
-import { Audio, Video } from 'expo-av';
+import { Audio, ResizeMode, Video } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams } from 'expo-router';
-import {
-  Image,
-  Mic,
-  Pause,
-  Play
-} from 'lucide-react-native';
+import { Image, Mic, Pause, Play } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Button,
   Pressable,
   Image as RNImage,
   ScrollView,
@@ -18,7 +14,11 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -32,12 +32,16 @@ const CANVAS_ASPECT_RATIO = 16 / 9;
 
 export default function EditProjectScreen() {
   const { id } = useLocalSearchParams();
-  const { projects, addClip, updateClip } = useProjects();
+  const { projects, addClip, updateClip, addLayer, removeLayer } =
+    useProjects();
   const project = projects.find((p) => p.id === id);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [selectedClip, setSelectedClip] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [selectedLayer, setSelectedLayer] = useState(
+    project?.layers.find((l) => l.position === 1)?.id
+  );
   const timelinePosition = useSharedValue(0);
   const scrollViewRef = useRef<ScrollView>(null);
   const videoRef = useRef<Video>(null);
@@ -80,6 +84,21 @@ export default function EditProjectScreen() {
 
   const handleTrimStart = (clipId: string) => {
     setSelectedClip(clipId);
+  };
+
+  const hanndleAddLayer = () => {
+    addLayer(project.id, { position: project.layers.length });
+  };
+
+  const handleDeleteLayer = (layerId: number) => {
+    removeLayer(project.id, layerId);
+    setSelectedLayer(project.layers.find((l) => l.position === 1)?.id);
+  };
+
+  const handleSelectClip = (clipId: string) => {
+    const layer = project.clips.find((c) => c.id === clipId)?.layerId;
+    setSelectedClip(clipId);
+    setSelectedLayer(layer);
   };
 
   const renderTrack = (type: 'video' | 'audio') => {
@@ -139,6 +158,7 @@ export default function EditProjectScreen() {
         uri: result.assets[0].uri,
         duration: 5000,
         startTime: totalDuration,
+        layerId: selectedLayer!,
       });
     }
   };
@@ -156,6 +176,7 @@ export default function EditProjectScreen() {
         uri: result.assets[0].uri,
         duration: 5000,
         startTime: totalDuration,
+        layerId: selectedLayer!,
       });
     }
   };
@@ -191,6 +212,7 @@ export default function EditProjectScreen() {
           uri,
           duration: 5000,
           startTime: totalDuration,
+          layerId: selectedLayer!,
         });
       }
     } catch (err) {
@@ -200,31 +222,39 @@ export default function EditProjectScreen() {
 
   const renderTimeline = () => {
     return (
-      <ScrollView
-        ref={scrollViewRef}
-        horizontal
-        style={styles.timeline}
-        contentContainerStyle={[
-          styles.timelineContent,
-          { width: Math.max(timelineWidth, 1000) }, // Ensure minimum width
-        ]}
-      >
-        <GestureDetector gesture={panGesture}>
-          <View style={{ width: '100%', height: '100%' }}>
-            <Animated.View style={[styles.playhead, playheadStyle]} />
-            <TimeLine
-              project={project}
-              selectedTime={currentTime}
-              onSelectTime={setCurrentTime}
-              timelineScale={TIMELINE_SCALE}
-              selectedClip={selectedClip}
-              onSelectClip={setSelectedClip}
-              onUpdateClipStartTime={handleUpdateClipStartTime}
-              onUpdateClipDuration={handleUpdateClipDuration}
-            />
-          </View>
-        </GestureDetector>
-      </ScrollView>
+      <GestureHandlerRootView>
+        <View style={{ flex: 1 }}>
+          <ScrollView
+            ref={scrollViewRef}
+            horizontal
+            style={styles.timeline}
+            contentContainerStyle={[
+              styles.timelineContent,
+              { width: Math.max(timelineWidth, 1000) }, // Ensure minimum width
+            ]}
+          >
+            <GestureDetector gesture={panGesture}>
+              <View style={{ width: '100%', height: '100%' }}>
+                <Animated.View style={[styles.playhead, playheadStyle]} />
+                <TimeLine
+                  project={project}
+                  selectedTime={currentTime}
+                  onSelectTime={setCurrentTime}
+                  timelineScale={TIMELINE_SCALE}
+                  selectedClip={selectedClip}
+                  selectedLayer={selectedLayer!}
+                  onDeleteLayer={handleDeleteLayer}
+                  onSelectClip={handleSelectClip}
+                  onSelectLayer={(layerId) => setSelectedLayer(layerId)}
+                  onUpdateClipStartTime={handleUpdateClipStartTime}
+                  onUpdateClipDuration={handleUpdateClipDuration}
+                />
+              </View>
+            </GestureDetector>
+          </ScrollView>
+          <Button title="Add Layer" onPress={hanndleAddLayer} />
+        </View>
+      </GestureHandlerRootView>
     );
   };
 
@@ -254,7 +284,7 @@ export default function EditProjectScreen() {
               ref={videoRef}
               source={{ uri: currentClip.uri }}
               style={styles.canvasMedia}
-              resizeMode="contain"
+              resizeMode={ResizeMode.CONTAIN}
               shouldPlay={isPlaying}
             />
           ))}
