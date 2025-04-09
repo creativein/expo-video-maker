@@ -14,7 +14,7 @@ import Animated, {
   withTiming 
 } from 'react-native-reanimated';
 import TimeLine from '@/app/components/TimeLine';
-import VideoPlayComponent from './VideoPlayComponent';
+import DraggableResizableImage from './Abc';
 
 const TRACK_HEIGHT = 80;
 const TIMELINE_SCALE = 100; // pixels per second
@@ -33,6 +33,8 @@ export default function EditProjectScreen() {
   const videoRef = useRef<Video>(null);
   const lastFrameTime = useRef<number>(0);
   const animationFrameId = useRef<number | null>(null);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
 
   if (!project) {
     return (
@@ -211,6 +213,11 @@ export default function EditProjectScreen() {
     );
   };
 
+  const onContainerLayout = (event) => {
+    const { width, height } = event.nativeEvent.layout;
+    setContainerSize({ width, height });
+  };
+  
   const renderCanvas = () => {
     const currentClip = selectedClip 
       ? project.clips.find(clip => clip.id === selectedClip)
@@ -219,14 +226,12 @@ export default function EditProjectScreen() {
         : null;
 
     return (
-      <View style={styles.canvas}>
-        {isPlaying && <VideoPlayComponent currentTime={currentTime} />}
+      <View style={styles.canvas} >
         {currentClip && !isPlaying && ['image', 'video'].includes(currentClip.type) && (
           currentClip.type === 'image' ? (
-            <RNImage
-              source={{ uri: currentClip.uri }}
-              style={styles.canvasMedia}
-              resizeMode="contain"
+            <DraggableResizableImage
+              source={currentClip.uri}
+              containerSize={containerSize}
             />
           ) : (
             <Video
@@ -341,7 +346,7 @@ export default function EditProjectScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.canvasContainer}>
+      <View style={styles.canvasContainer} onLayout={onContainerLayout}>
         {renderCanvas()}
       </View>
       <View style={styles.timelineContainer}>
@@ -525,7 +530,7 @@ const styles = StyleSheet.create({
   canvas: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
+    // alignItems: 'center',
     overflow: 'hidden',
   },
   canvasMedia: {
